@@ -1,0 +1,22 @@
+# fennec-cdp — own-repo gitignore (kitchen-sink + whitelist, submoduleless doctrine)
+*
+!.gitignore
+!README.md
+!LICENSE
+!package.json
+!mise.toml
+!AGENTS.md
+!src/
+!src/**
+!tests/
+!tests/**
+!bin/
+!bin/**
+!docs/
+!docs/**
+!*.ts
+!*.py
+!*.sh
+!*.mdnode_modules/
+__pycache__/
+.venv/
