@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# fennec-mcp — CLI + stdio MCP entry for the persistent fennec RDP bridge.
+#
+# Subcommands (direct CLI use — no MCP client needed):
+#   fennec-mcp              start the stdio MCP server (for thresher/gateway)
+#   fennec-mcp tabs         list fennec tabs (one-shot, via the bridge)
+#   fennec-mcp cf-session   extract the live CF session (one-shot)
+#   fennec-mcp eval <js>    evaluate JS in the CF tab (one-shot)
+#
+# The bridge holds ONE persistent RDP connection per process lifetime —
+# CLI one-shots connect fresh (and free the slot on exit via the bridge's
+# clean disconnect).
+set -u
+KAIROS_BASH="bash"
+SRC="/home/toxic/pens/fleet/devices/fennec-cdp/src"
+export ADB_SERIAL="${ADB_SERIAL:-adb-4C121FDAS0004Y-iQyNOl._adb-tls-connect._tcp}"
+
+case "${1:-}" in
+  ""|serve|mcp)
+    exec bun "$SRC/fennec-mcp.ts"
+    ;;
+  tabs|cf-session|eval)
+    # one-shot: fresh forward + connect + act + clean disconnect
+    P=$(adb -s "$ADB_SERIAL" forward tcp:0 localabstract:org.mozilla.fennec_fdroid/firefox-debugger-socket 2>/dev/null | tr -d '\r\n ')
+    [ -z "$P" ] && { echo '{"error":"forward failed"}'; exit 1; }
+    exec bun "$SRC/oneshot.ts" "$1" "${2:-}" "$P"
+    ;;
+  *)
+    echo "unknown subcommand: $1 (tabs | cf-session | eval | serve)" >&2
+    exit 1
+    ;;
+esac
