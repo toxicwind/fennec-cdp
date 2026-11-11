@@ -126,6 +126,9 @@ faults to disk, LAN latency balloons, SSH/Terminus sessions stall.
 - RDP client: `pens/fleet/devices/fennec-cdp/src/rdp.ts`
 - LuaJ shim: `pens/fleet/devices/android-fleet/products/luaj-dropin/`
 - Private gist: `android17-cinnamon-bun-audit-20261110.md`
+- **Deep dives:**
+  - [AiCore × EdgeTPU modular deep-dive](aicore-edgetpu-deep-dive-20261110.md)
+  - [🏆 Bounty-grade discrete finding — memory accounting anomaly](aicore-edgetpu-bounty-finding-20261110.md)
 
 ---
 
