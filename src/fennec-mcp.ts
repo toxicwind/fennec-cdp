@@ -125,16 +125,60 @@ async function connect(): Promise<boolean> {
   return hello != null && hello.from === "root";
 }
 
-async function ensureSession(): Promise<boolean> {
-  if (rdp && consoleActor) return true;
-  if (!rdp && !(await connect())) return false;
-  const tabs = await rdp!.request({ to: "root", type: "listTabs" }, 8000);
+/** Drop any held socket + reset session state. */
+function dropSession(): void {
+  if (rdp) { try { rdp.close(); } catch { /* best effort */ } }
+  rdp = null;
+  consoleActor = null;
+  cfTab = null;
+}
+
+/**
+ * Self-heal the wedged debugger slot: Fennec accepts ONE debugger client and
+ * every connect→exit cycle leaves a ghost client that starves the next
+ * connect (hello never arrives; listTabs stays silent). Clear it with a
+ * rish force-stop + silent background restart, then wait for the socket.
+ */
+async function recoverFennec(): Promise<boolean> {
+  dropSession();
+  const rish = "sh /data/local/tmp/rish -c";
+  await sh(`adb -s ${SERIAL} forward --remove-all`);
+  await sh(`adb -s ${SERIAL} shell "${rish} 'am force-stop org.mozilla.fennec_fdroid'"`);
+  await sh(`adb -s ${SERIAL} shell "${rish} 'am start -n org.mozilla.fennec_fdroid/org.mozilla.fenix.HomeActivity --windowingMode 4'"`);
+  for (let i = 0; i < 30; i++) {
+    const out = await sh(
+      `adb -s ${SERIAL} shell 'cat /proc/net/unix 2>/dev/null | grep -c firefox-debugger-socket'`,
+    );
+    if (out.trim() !== "" && out.trim() !== "0") return true;
+    await Bun.sleep(500);
+  }
+  return false;
+}
+
+/** Full handshake on the current rdp connection: listTabs → attach. */
+async function handshake(): Promise<boolean> {
+  if (!rdp) return false;
+  const tabs = await rdp.request({ to: "root", type: "listTabs" }, 8000);
   if (!tabs?.tabs?.length) return false;
   cfTab = tabs.tabs.find((t: Frame) => (t.url ?? "").includes("cloudflare")) ?? tabs.tabs[0];
-  const attach = await rdp!.request({ to: cfTab.actor, type: "attach" }, 8000);
+  const attach = await rdp.request({ to: cfTab.actor, type: "attach" }, 8000);
   if (!attach?.frame?.consoleActor) return false;
   consoleActor = attach.frame.consoleActor;
   return true;
+}
+
+async function ensureSession(): Promise<boolean> {
+  if (rdp && consoleActor) return true;
+  if (!rdp && !(await connect())) {
+    // Wedged slot (ghost client): clear it and retry once.
+    if (!(await recoverFennec())) return false;
+    if (!(await connect())) return false;
+  }
+  if (await handshake()) return true;
+  // Connected but the server went silent (half-initialized debugger).
+  await recoverFennec();
+  if (!(await connect())) return false;
+  return handshake();
 }
 
 async function evalInTab(expression: string): Promise<unknown> {
