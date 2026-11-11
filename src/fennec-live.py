@@ -29,6 +29,10 @@ class FennecSession:
         self._handshake()
 
     def _sendl(self, o):
+        # BOTH directions are LENGTH-PREFIXED frames: `<len>:<json>`.
+        # (Ground truth from src/rdp.ts, reconciled from 3 live impls —
+        # the old README/protocol.md claiming newline-delimited sends was
+        # stale and KILLS the session: the server stops replying.)
         b = json.dumps(o).encode()
         self.s.sendall(str(len(b)).encode() + b":" + b)
 
@@ -69,7 +73,10 @@ class FennecSession:
         return out, hit
 
     def _handshake(self):
+        # 1. Server hello arrives PASSIVELY on connect (no nudge byte —
+        #    ground truth from src/rdp.ts; the nudge byte was stale README).
         self._pump(2.5)  # passive hello
+        # 2. listTabs → server responds with tabs (length-prefixed)
         self._sendl({"to": "root", "type": "listTabs"})
         fs, _ = self._pump(6, b'"tabs"')
         tabs = []
@@ -80,6 +87,10 @@ class FennecSession:
         self.tab = cf or (tabs[0] if tabs else None)
         if not self.tab:
             raise RuntimeError("no tabs")
+        # 3. ATTACH first (missing before: getTarget without attach is refused)
+        self._sendl({"to": self.tab["actor"], "type": "attach"})
+        self._pump(3)
+        # 4. getTarget → consoleActor
         self._sendl({"to": self.tab["actor"], "type": "getTarget"})
         fs, _ = self._pump(8, b"consoleActor")
         for j in fs:
